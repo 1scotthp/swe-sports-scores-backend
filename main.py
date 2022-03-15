@@ -9,6 +9,7 @@ from firebase_admin import db
 from firebase_admin import firestore
 from datetime import date
 from datetime import timedelta
+import random
 
 import dataclasses
 
@@ -80,52 +81,68 @@ def process_data(sport):
         i += 1
 
     ref = db.reference('results/' + sport + "/")
-    ref.set(data)
+    ref.set(game_array)
 
 
 def grade_bets(sport):
 
     ref = db.reference('results/' + sport + "/")
     results = ref.get()
-    print(results)
 
     db_firestore = firestore.client()
     docs = db_firestore.collection(u'users').stream()
+    i = 0
     for doc in docs:
+       
         open_bets = doc.to_dict()["open_bets"]  # get all bets for a user
+        print(i, open_bets)
+        i+=1
         still_open_bets = []
+        new_graded_bets = []
         new_wins = 0
         new_losses = 0
         for bet in open_bets:  # check to see if the game happened
+            graded = False
             for game in results:
                 if bet['win'] == game['home_team'] and bet['lose'] == game['away_team']:
                     if game['home_score'] > game['away_score']:  # correct
                         new_wins += 1
                     else:  # incorrect
                         new_losses += 1
+                    graded = True
+                    break
                 elif bet['win'] == game['away_team'] and bet['lose'] == game['home_team']:
                     if game['home_score'] < game['away_score']:  # correct
                         new_wins += 1
                     else:  # incorrect
                         new_losses += 1
-                else:
-                    still_open_bets.append(bet)
+                    graded = True
+                    break
+                
+            if not graded:
+                still_open_bets.append(bet)
+            else: 
+                new_graded_bets.append(bet)
 
-    userRef = db_firestore.collection(u'users').document(doc.id)
 
-    if new_wins > -1 or new_losses > 0:
-        user = doc.to_dict()
-        userRef.set(
-            {
+        userRef = db_firestore.collection(u'users').document(doc.id)
+
+        if new_wins > -1 or new_losses > 0:
+            user = doc.to_dict()
+            newUser = {
                 "open_bets": still_open_bets,
-                "graded_bets": user["graded_bets"],
+                "graded_bets": user["graded_bets"]+new_graded_bets,
                 "losses": user["losses"] + new_losses,
                 "wins": user["wins"] + new_wins,
                 "username": user['username'],
                 "phoneNumber": user['phoneNumber'],
                 "group_chats": user["group_chats"]
             }
-        )
+            print(i, newUser["open_bets"])
+            userRef.set(
+                newUser
+            )
+
 
 cred = credentials.Certificate(
     "swe-sports-firebase-firebase-adminsdk-9lnlp-54450378e3.json")
@@ -145,3 +162,7 @@ def grade_all():
     sport_arr = ["basketball_nba", "icehockey_nhl", "basketball_ncaab"]
     for s in sport_arr:
         grade_bets(s)
+
+
+load_all()
+grade_all()
